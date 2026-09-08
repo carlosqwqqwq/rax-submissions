@@ -1,0 +1,85 @@
+name: Temporary xxHash QEMU experiment
+
+on:
+  push:
+    branches:
+      - infra/temporary-xxhash-qemu-20260908
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: temporary-xxhash-qemu-20260908
+  cancel-in-progress: true
+
+jobs:
+  experiment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout: |
+            temporary
+          sparse-checkout-cone-mode: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install QEMU and RISC-V cross tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            qemu-user \
+            gcc-riscv64-linux-gnu \
+            binutils-riscv64-linux-gnu \
+            libc6-dev-riscv64-cross \
+            make git
+
+      - name: Run fixed xxHash intervention
+        run: |
+          python temporary/xxhash_qemu.py \
+            --output "$RUNNER_TEMP/xxhash-qemu-intervention"
+
+      - name: Validate scope and completeness
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["RUNNER_TEMP"]) / "xxhash-qemu-intervention"
+          result = json.loads((root / "result.json").read_text())
+          assert result["schema"] == "rax.xxhash-qemu-intervention.v1"
+          assert result["status"] == "complete"
+          assert result["correctness"]["status"] == "pass"
+          assert result["correctness"]["differential_inputs"] == 42
+          assert result["activation"]["rvv"]["target_vector_operations"] > 0
+          assert result["activation"]["scalar"]["target_instruction_hits"] > 0
+          assert result["activation"]["scalar"]["target_vector_operations"] == 0
+          assert len(result["endpoint"]["samples_mb_s"]["rvv"]) == 5
+          assert len(result["endpoint"]["samples_mb_s"]["scalar"]) == 5
+          assert result["endpoint"]["median_paired_rvv_over_scalar"] > 0
+          assert result["claim_scope"]["qemu_relative_timing"] == "measured"
+          assert result["claim_scope"]["physical_riscv_performance"] == "not-claimed"
+          PY
+
+      - name: Publish experiment summary
+        if: always()
+        run: |
+          if test -f "$RUNNER_TEMP/xxhash-qemu-intervention/result.json"; then
+            cat "$RUNNER_TEMP/xxhash-qemu-intervention/result.json" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xxhash-qemu-intervention-${{ github.run_id }}
+          path: ${{ runner.temp }}/xxhash-qemu-intervention
+          if-no-files-found: error
+          retention-days: 14
