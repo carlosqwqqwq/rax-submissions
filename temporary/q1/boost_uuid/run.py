@@ -176,7 +176,7 @@ def checkout(
     ).stdout.strip()
     tree = recorder.run(
         f"{label}-tree",
-        [git, "rev-parse", "HEAD^{{tree}}"],
+        [git, "rev-parse", "HEAD^{tree}"],
         cwd=destination,
     ).stdout.strip()
     if head != revision:
