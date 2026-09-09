@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 env:
   DEBIAN_FRONTEND: noninteractive
@@ -83,7 +83,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          persist-credentials: false
+          persist-credentials: true
+      - name: Correct the copied Git revision expression
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('temporary/q1/boost_uuid/run.py')
+          text = path.read_text(encoding='utf-8')
+          old = 'HEAD^{{tree}}'
+          new = 'HEAD^{tree}'
+          if text.count(old) == 1:
+              path.write_text(text.replace(old, new), encoding='utf-8')
+          elif old in text or new not in text:
+              raise SystemExit('unexpected Boost.UUID revision-expression state')
+          PY
+          if ! git diff --quiet -- temporary/q1/boost_uuid/run.py; then
+            git config user.name github-actions[bot]
+            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+            git add temporary/q1/boost_uuid/run.py
+            git commit -m "fix(qemu): correct Boost.UUID tree identity expression"
+            git push origin HEAD:${{ github.ref_name }}
+          fi
       - name: Install frozen QEMU tools
         run: |
           sudo apt-get update -qq
@@ -103,6 +126,8 @@ jobs:
           mkdir -p /tmp/rax-q1-boost-uuid
           {
             echo "rax_source_sha=$RAX_SOURCE_SHA"
+            echo "public_runner_commit=$(git rev-parse HEAD)"
+            echo "public_runner_sha256=$(sha256sum temporary/q1/boost_uuid/run.py | cut -d' ' -f1)"
             echo "run_id=${{ github.run_id }}"
             echo "run_attempt=${{ github.run_attempt }}"
           } > /tmp/rax-q1-boost-uuid/rax-source.txt
