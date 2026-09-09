@@ -107,12 +107,13 @@ jobs:
             git commit -m "fix(qemu): correct Boost.UUID tree identity expression"
             git push origin HEAD:${{ github.ref_name }}
           fi
-      - name: Install frozen QEMU tools
+      - name: Install frozen QEMU tools and Boost headers
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
             git qemu-user g++-riscv64-linux-gnu \
-            binutils-riscv64-linux-gnu libc6-dev-riscv64-cross
+            binutils-riscv64-linux-gnu libc6-dev-riscv64-cross \
+            libboost-dev
           qemu-riscv64 --version | tee qemu-version.txt
           grep -F 'version 8.2.2' qemu-version.txt
       - name: Run the frozen replay package
